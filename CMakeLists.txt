@@ -14,6 +14,7 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_gtest REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -47,4 +48,21 @@ ament_target_dependencies(localizer_node
 install(TARGETS localizer_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
+
+if(BUILD_TESTING)
+  ament_add_gtest(localizer_component_test
+    test/localizer_component_test.cpp)
+
+  if(TARGET localizer_component_test)
+    target_link_libraries(localizer_component_test
+      cxd5602pwbimu_localizer_component)
+
+    ament_target_dependencies(localizer_component_test
+      rclcpp
+      rclcpp_components
+      sensor_msgs
+      geometry_msgs
+      tf2_ros)
+  endif()
+endif()
 ament_package()
