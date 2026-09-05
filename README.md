@@ -83,6 +83,8 @@ ros2 run cxd5602pwbimu_localizer_node localizer_node --ros-args \
 | `baud_rate` | `115200` | Serial communication baud rate |
 | `tf_parent_frame` | `world` | Parent frame for TF broadcast |
 | `tf_child_frame` | `sensor` | Child frame for TF broadcast |
+| `usb_reset` | `true` | Reset the USB-serial bridge (CP210x) at USB level on start-up (Linux only, see below) |
+| `usb_vid_pid` | `10c4:ea60` | VID:PID of the USB device to reset |
 
 ## Published Topics
 
@@ -134,6 +136,8 @@ This format is output by the [cxd5602pwbimu_localizer_arduino](https://github.co
 3. **No data received:**
    - Ensure cxd5602pwbimu_localizer_arduino firmware is running on Spresense
    - Check baud rate matches (115200)
+   - Nothing is output during the 15 s stationary calibration after boot (LED0 on the board is lit)
+   - After using the firmware's raw recording mode (921600 baud) the host's USB-serial bridge can be left in a state where the port opens but nothing is received. The node resets the bridge at USB level on start-up to recover from this (`usb_reset` parameter, no unplugging needed). If the reset fails a warning is logged and the node continues; unplug and replug the board in that case
 
 ## License
 

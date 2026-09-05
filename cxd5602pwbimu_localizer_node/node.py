@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
+import time
+
 import rclpy
 from rclpy.node import Node
 import serial
 import struct
 
+from . import usb_reset
+
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Pose, TransformStamped
 
 import tf2_ros
-
-# シリアルポートの設定（環境に合わせて変更してください）
-SERIAL_PORT = '/dev/ttyUSB0'  # 例: Windowsなら "COM3"
-BAUD_RATE = 115200
 
 def hex_to_float(hex_str):
     """
@@ -30,14 +30,30 @@ class SerialRosNode(Node):
         self.declare_parameter('baud_rate', 115200)
         self.declare_parameter('tf_parent_frame', 'world')
         self.declare_parameter('tf_child_frame', 'sensor')
+        # The CP210x USB-serial bridge of the Spresense board can be left in a
+        # state where nothing is received (typically after a 921600 baud raw
+        # recording session). A USB-level reset before opening the port
+        # recovers it; the board itself keeps running.
+        self.declare_parameter('usb_reset', True)
+        self.declare_parameter('usb_vid_pid', '10c4:ea60')
 
         serial_port = self.get_parameter('serial_port').get_parameter_value().string_value
         baud_rate = self.get_parameter('baud_rate').get_parameter_value().integer_value
         self.tf_parent_frame = self.get_parameter('tf_parent_frame').get_parameter_value().string_value
         self.tf_child_frame = self.get_parameter('tf_child_frame').get_parameter_value().string_value
+        do_usb_reset = self.get_parameter('usb_reset').get_parameter_value().bool_value
+        usb_vid_pid = self.get_parameter('usb_vid_pid').get_parameter_value().string_value
 
         self.get_logger().info(f"Using serial port: {serial_port} at {baud_rate} baud")
         self.get_logger().info(f"TF frames: parent='{self.tf_parent_frame}', child='{self.tf_child_frame}'")
+
+        if do_usb_reset:
+            try:
+                node_path = usb_reset.reset_by_vid_pid(usb_vid_pid)
+                self.get_logger().info(f"USB-serial bridge reset ({node_path}); waiting for re-enumeration")
+                time.sleep(2.0)
+            except Exception as e:
+                self.get_logger().warn(f"USB-serial bridge reset skipped: {e}")
 
         # パブリッシャの作成
         self.imu_pub = self.create_publisher(Imu, 'imu/data_raw', 10)
@@ -49,7 +65,7 @@ class SerialRosNode(Node):
         # シリアルポートの初期化
         try:
             self.ser = serial.Serial(serial_port, baud_rate, timeout=0.1)
-            self.get_logger().info(f"Serial port {SERIAL_PORT} opened at {BAUD_RATE} baud.")
+            self.get_logger().info(f"Serial port {serial_port} opened at {baud_rate} baud.")
         except Exception as e:
             self.get_logger().error(f"Error opening serial port: {e}")
             self.ser = None
@@ -63,14 +79,18 @@ class SerialRosNode(Node):
 
         try:
             # 1行分読み込み（改行まで）
-            line = self.ser.readline().decode('utf-8').strip()
+            line = self.ser.readline().decode('utf-8', errors='replace').strip()
             if not line:
+                return
+            # '#' で始まる行はファームウェアのメッセージ（較正モードなど）
+            if line.startswith('#'):
+                self.get_logger().info(line)
                 return
 
             # カンマ区切りで分割（末尾の空文字は除外）
             parts = [p for p in line.split(',') if p]
-            # 受信するデータは 1 (タイムスタンプ) + 3 (角速度) + 3 (加速度)
-            # + 4 (クォータニオン) + 3 (速度) + 3 (位置) = 17 要素である前提
+            # 受信するデータは 1 (タイムスタンプ) + 1 (温度) + 3 (角速度) + 3 (加速度)
+            # + 4 (クォータニオン) + 3 (速度) + 3 (位置) = 18 要素である前提
             if len(parts) != 18:
                 self.get_logger().warn(f"Unexpected data length: {parts}")
                 return
@@ -80,7 +100,7 @@ class SerialRosNode(Node):
             timestamp = int(parts[0], 16)
 
             # 角速度(x,y,z)と加速度(x,y,z)は浮動小数点数に変換
-            temperature = hex_to_float(parts[1])
+            temperature = hex_to_float(parts[1])  # noqa: F841 (not published yet)
             angular_velocity = [hex_to_float(p) for p in parts[2:5]]
             linear_acceleration = [hex_to_float(p) for p in parts[5:8]]
 
@@ -88,7 +108,7 @@ class SerialRosNode(Node):
             quat_vals = [hex_to_float(p) for p in parts[8:12]]
 
             # 速度 (x,y,z) -- 必要に応じて別のメッセージで扱えます
-            velocity = [hex_to_float(p) for p in parts[12:15]]
+            velocity = [hex_to_float(p) for p in parts[12:15]]  # noqa: F841 (not published yet)
 
             # 位置 (x,y,z)
             position = [hex_to_float(p) for p in parts[15:18]]

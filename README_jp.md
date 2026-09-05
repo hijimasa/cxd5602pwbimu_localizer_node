@@ -83,6 +83,8 @@ ros2 run cxd5602pwbimu_localizer_node localizer_node --ros-args \
 | `baud_rate` | `115200` | シリアル通信のボーレート |
 | `tf_parent_frame` | `world` | TFブロードキャストの親フレーム |
 | `tf_child_frame` | `sensor` | TFブロードキャストの子フレーム |
+| `usb_reset` | `true` | 起動時にUSBシリアルブリッジ（CP210x）をUSBレベルでリセットする（Linuxのみ、下記参照） |
+| `usb_vid_pid` | `10c4:ea60` | リセット対象のUSBデバイスのVID:PID |
 
 ## パブリッシュするトピック
 
@@ -134,6 +136,8 @@ ros2 run cxd5602pwbimu_localizer_node localizer_node --ros-args \
 3. **データが受信されない:**
    - Spresenseでcxd5602pwbimu_localizer_arduinoファームウェアが動作していることを確認
    - ボーレートが一致しているか確認（115200）
+   - 起動後15秒の静止較正の間は出力がありません（ボードのLED0点灯中）
+   - ファームウェアの生データ記録モード（921600 baud）を使った後は、ホスト側のUSBシリアルブリッジが固まり、ポートは開けるのに何も受信できない状態になることがあります。本ノードは起動時にブリッジをUSBレベルでリセットして回避します（`usb_reset` パラメータ、ボードの抜き差しは不要）。リセットに失敗した場合は警告ログを出して続行するので、その場合は抜き差ししてください
 
 ## ライセンス
 
